@@ -4,6 +4,7 @@ namespace PlatformCommunity\Flysystem\BunnyCDN\Tests;
 
 use GuzzleHttp\Psr7\Response;
 use League\Flysystem\AdapterTestUtilities\FilesystemAdapterTestCase;
+use League\Flysystem\ChecksumAlgoIsNotSupported;
 use League\Flysystem\Config;
 use League\Flysystem\FileAttributes;
 use League\Flysystem\Filesystem;
@@ -327,6 +328,31 @@ class FlysystemTestSuite extends FilesystemAdapterTestCase
         self::expectExceptionMessage('In order to get a visible URL for a BunnyCDN object, you must pass the "pullzone_url" parameter to the BunnyCDNAdapter.');
         $myAdapter = new BunnyCDNAdapter(static::bunnyCDNClient());
         $myAdapter->publicUrl('/path.txt', new Config());
+    }
+
+    /**
+     * @test
+     */
+    public function get_checksum(): void
+    {
+        if (! isset($_SERVER['STORAGEZONE'], $_SERVER['APIKEY'])) {
+            $this->markTestSkipped('No checksum supported for local tests');
+        }
+
+        $adapter = $this->adapter();
+
+        $content = 'foobar';
+
+        $adapter->write('path.txt', $content, new Config());
+
+        $this->assertSame(hash('sha256', $content), $adapter->checksum('path.txt', new Config()));
+
+        self::expectException(ChecksumAlgoIsNotSupported::class);
+        $this->assertSame(hash('md5', $content), $adapter->checksum('path.txt', new Config(
+            [
+                'checksum_algo' => 'md5',
+            ]
+        )));
     }
 
     /**

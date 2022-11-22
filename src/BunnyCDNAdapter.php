@@ -4,6 +4,7 @@ namespace PlatformCommunity\Flysystem\BunnyCDN;
 
 use Exception;
 use League\Flysystem\CalculateChecksumFromStream;
+use League\Flysystem\ChecksumAlgoIsNotSupported;
 use League\Flysystem\ChecksumProvider;
 use League\Flysystem\Config;
 use League\Flysystem\DirectoryAttributes;
@@ -19,6 +20,7 @@ use League\Flysystem\UnableToCreateDirectory;
 use League\Flysystem\UnableToDeleteDirectory;
 use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToMoveFile;
+use League\Flysystem\UnableToProvideChecksum;
 use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToRetrieveMetadata;
 use League\Flysystem\UnableToSetVisibility;
@@ -184,7 +186,7 @@ class BunnyCDNAdapter implements FilesystemAdapter, PublicUrlGenerator, Checksum
             'date_created' => $bunny_file_array['DateCreated'],
             'storage_zone_name' => $bunny_file_array['StorageZoneName'],
             'storage_zone_id' => $bunny_file_array['StorageZoneId'],
-            'checksum' => $bunny_file_array['Checksum'],
+            'checksum' => \strtolower($bunny_file_array['Checksum']),
             'replicated_zones' => $bunny_file_array['ReplicatedZones'],
         ];
     }
@@ -493,6 +495,32 @@ class BunnyCDNAdapter implements FilesystemAdapter, PublicUrlGenerator, Checksum
 
     public function checksum(string $path, Config $config): string
     {
-        return $this->calculateChecksumFromStream($path, $config);
+        $algo = $config->get('checksum_algo', 'sha256');
+
+        if ($algo !== 'sha256') {
+            throw new ChecksumAlgoIsNotSupported();
+        }
+
+        try {
+            $object = $this->getObject($path);
+        } catch (UnableToReadFile $exception) {
+            throw new UnableToProvideChecksum($exception->reason(), $path, $exception);
+        }
+
+        if ($object instanceof DirectoryAttributes) {
+            throw new UnableToProvideChecksum('', $path);
+        }
+
+        try {
+            $metadata = $object->extraMetadata();
+        } catch (UnableToRetrieveMetadata $exception) {
+            throw new UnableToProvideChecksum($exception->reason(), $path, $exception);
+        }
+
+        if (! isset($metadata['checksum'])) {
+            throw new UnableToProvideChecksum('checksum not available.', $path);
+        }
+
+        return $metadata['checksum'];
     }
 }
